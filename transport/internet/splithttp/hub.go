@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/quic-go/quic-go"
-	"github.com/quic-go/quic-go/http3"
+	"github.com/refraction-networking/uquic"
+	"github.com/refraction-networking/uquic/http3"
 	"github.com/xtls/xray-core/common"
 	"github.com/xtls/xray-core/common/errors"
 	"github.com/xtls/xray-core/common/net"
@@ -269,7 +269,6 @@ func ListenSH(ctx context.Context, address net.Address, port net.Port, streamSet
 	tlsConfig := getTLSConfig(streamSettings)
 	l.isH3 = len(tlsConfig.NextProtos) == 1 && tlsConfig.NextProtos[0] == "h3"
 
-
 	if port == net.Port(0) { // unix
 		listener, err = internet.ListenSystem(ctx, &net.UnixAddr{
 			Name: address.Domain(),
@@ -285,9 +284,9 @@ func ListenSH(ctx context.Context, address net.Address, port net.Port, streamSet
 			Port: int(port),
 		}, streamSettings.SocketSettings)
 		if err != nil {
-			return nil,  errors.New("failed to listen UDP(for SH3) on ", address, ":", port).Base(err)
+			return nil, errors.New("failed to listen UDP(for SH3) on ", address, ":", port).Base(err)
 		}
-		h3listener, err := quic.ListenEarly(Conn,tlsConfig, nil)
+		h3listener, err := quic.ListenEarly(Conn, v2tls.ToUTLSConfig(tlsConfig), nil)
 		if err != nil {
 			return nil, errors.New("failed to listen QUIC(for SH3) on ", address, ":", port).Base(err)
 		}
