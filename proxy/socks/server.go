@@ -19,6 +19,7 @@ import (
 	"github.com/xtls/xray-core/features"
 	"github.com/xtls/xray-core/features/policy"
 	"github.com/xtls/xray-core/features/routing"
+	"github.com/xtls/xray-core/proxy/http"
 	"github.com/xtls/xray-core/transport/internet/stat"
 	"github.com/xtls/xray-core/transport/internet/udp"
 )
@@ -29,6 +30,7 @@ type Server struct {
 	policyManager policy.Manager
 	cone          bool
 	udpFilter     *UDPFilter
+	httpServer    *http.Server
 }
 
 // NewServer creates a new Server object.
@@ -39,9 +41,14 @@ func NewServer(ctx context.Context, config *ServerConfig) (*Server, error) {
 		policyManager: v.GetFeature(policy.ManagerType()).(policy.Manager),
 		cone:          ctx.Value("cone").(bool),
 	}
+	httpConfig := &http.ServerConfig{
+		UserLevel: config.UserLevel,
+	}
 	if config.AuthType == AuthType_PASSWORD {
+		httpConfig.Accounts = config.Accounts
 		s.udpFilter = new(UDPFilter) // We only use this when auth is enabled
 	}
+	s.httpServer, _ = http.NewServer(ctx, httpConfig)
 	return s, nil
 }
 
@@ -77,7 +84,13 @@ func (s *Server) Process(ctx context.Context, network net.Network, conn stat.Con
 
 	switch network {
 	case net.Network_TCP:
-		return s.processTCP(ctx, conn, dispatcher)
+		firstbyte := make([]byte, 1)
+		conn.Read(firstbyte)
+		if firstbyte[0] != 5 && firstbyte[0] != 4 { // Check if it is Socks5/4/4a
+			errors.LogDebug(ctx, "Not Socks request, try to parse as HTTP request")
+			return s.httpServer.ProcessWithFirstbyte(ctx, network, conn, dispatcher, firstbyte...)
+		}
+		return s.processTCP(ctx, conn, dispatcher, firstbyte)
 	case net.Network_UDP:
 		return s.handleUDPPayload(ctx, conn, dispatcher)
 	default:
@@ -85,7 +98,7 @@ func (s *Server) Process(ctx context.Context, network net.Network, conn stat.Con
 	}
 }
 
-func (s *Server) processTCP(ctx context.Context, conn stat.Connection, dispatcher routing.Dispatcher) error {
+func (s *Server) processTCP(ctx context.Context, conn stat.Connection, dispatcher routing.Dispatcher, firstbyte []byte) error {
 	plcy := s.policy()
 	if err := conn.SetReadDeadline(time.Now().Add(plcy.Timeouts.Handshake)); err != nil {
 		errors.LogInfoInner(ctx, err, "failed to set deadline")
@@ -103,7 +116,13 @@ func (s *Server) processTCP(ctx context.Context, conn stat.Connection, dispatche
 		localAddress: net.IPAddress(conn.LocalAddr().(*net.TCPAddr).IP),
 	}
 
-	reader := &buf.BufferedReader{Reader: buf.NewReader(conn)}
+	// Firstbyte is for forwarded conn from SOCKS inbound
+	// Because it needs first byte to choose protocol
+	// We need to add it back
+	reader := &buf.BufferedReader{
+		Reader: buf.NewReader(conn),
+		Buffer: buf.MultiBuffer{buf.FromBytes(firstbyte)},
+	}
 	request, err := svrSession.Handshake(reader, conn)
 	if err != nil {
 		if inbound.Source.IsValid() {
@@ -136,7 +155,7 @@ func (s *Server) processTCP(ctx context.Context, conn stat.Connection, dispatche
 			})
 		}
 
-		return s.transport(ctx, reader, conn, dest, dispatcher, inbound)
+		return s.transport(ctx, conn, dest, dispatcher, inbound)
 	}
 
 	if request.Command == protocol.RequestCommandUDP {
@@ -155,7 +174,7 @@ func (*Server) handleUDP(c io.Reader) error {
 	return common.Error2(io.Copy(buf.DiscardBytes, c))
 }
 
-func (s *Server) transport(ctx context.Context, reader io.Reader, writer io.Writer, dest net.Destination, dispatcher routing.Dispatcher, inbound *session.Inbound) error {
+func (s *Server) transport(ctx context.Context, conn stat.Connection, dest net.Destination, dispatcher routing.Dispatcher, inbound *session.Inbound) error {
 	ctx, cancel := context.WithCancel(ctx)
 	timer := signal.CancelAfterInactivity(ctx, cancel, s.policy().Timeouts.ConnectionIdle)
 
@@ -172,7 +191,7 @@ func (s *Server) transport(ctx context.Context, reader io.Reader, writer io.Writ
 
 	requestDone := func() error {
 		defer timer.SetTimeout(plcy.Timeouts.DownlinkOnly)
-		if err := buf.Copy(buf.NewReader(reader), link.Writer, buf.UpdateActivity(timer)); err != nil {
+		if err := buf.Copy(buf.NewReader(conn), link.Writer, buf.UpdateActivity(timer)); err != nil {
 			return errors.New("failed to transport all TCP request").Base(err)
 		}
 
@@ -182,7 +201,7 @@ func (s *Server) transport(ctx context.Context, reader io.Reader, writer io.Writ
 	responseDone := func() error {
 		defer timer.SetTimeout(plcy.Timeouts.UplinkOnly)
 
-		v2writer := buf.NewWriter(writer)
+		v2writer := buf.NewWriter(conn)
 		if err := buf.Copy(link.Reader, v2writer, buf.UpdateActivity(timer)); err != nil {
 			return errors.New("failed to transport all TCP response").Base(err)
 		}
