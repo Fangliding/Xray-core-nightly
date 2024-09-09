@@ -15,9 +15,17 @@ message Config {
   RandRangeConfig scMinPostsIntervalMs = 6;
   bool noSSEHeader = 7;
   RandRangeConfig xPaddingBytes = 8;
+  Multiplexing httpMux = 9;
 }
 
 message RandRangeConfig {
     int32 from = 1;
     int32 to = 2;
+}
+
+message Multiplexing {
+  RandRangeConfig requestsPerConnection = 4;
+  RandRangeConfig connectionLifetimeMs = 5;
+  RandRangeConfig connections = 6;
+  RandRangeConfig concurrency = 7;
 }

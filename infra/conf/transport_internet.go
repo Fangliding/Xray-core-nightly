@@ -231,6 +231,14 @@ type SplitHTTPConfig struct {
 	ScMinPostsIntervalMs *Int32Range       `json:"scMinPostsIntervalMs"`
 	NoSSEHeader          bool              `json:"noSSEHeader"`
 	XPaddingBytes        *Int32Range       `json:"xPaddingBytes"`
+	HttpMux              SplitHTTPMux      `json:"httpMux"`
+}
+
+type SplitHTTPMux struct {
+	RequestsPerConnection *Int32Range `json:"requestsPerConnection"`
+	ConnectionLifetimeMs  *Int32Range `json:"connectionLifetimeMs"`
+	Connections           *Int32Range `json:"connections"`
+	Concurrency           *Int32Range `json:"concurrency"`
 }
 
 func splithttpNewRandRangeConfig(input *Int32Range) *splithttp.RandRangeConfig {
@@ -254,6 +262,15 @@ func (c *SplitHTTPConfig) Build() (proto.Message, error) {
 	} else if c.Host == "" && c.Headers["Host"] != "" {
 		c.Host = c.Headers["Host"]
 	}
+
+	// Multiplexing config
+	muxProtobuf := splithttp.Multiplexing{
+		RequestsPerConnection: splithttpNewRandRangeConfig(c.HttpMux.RequestsPerConnection),
+		ConnectionLifetimeMs:  splithttpNewRandRangeConfig(c.HttpMux.ConnectionLifetimeMs),
+		Connections:           splithttpNewRandRangeConfig(c.HttpMux.Connections),
+		Concurrency:           splithttpNewRandRangeConfig(c.HttpMux.Concurrency),
+	}
+
 	config := &splithttp.Config{
 		Path:                 c.Path,
 		Host:                 c.Host,
@@ -263,6 +280,7 @@ func (c *SplitHTTPConfig) Build() (proto.Message, error) {
 		ScMinPostsIntervalMs: splithttpNewRandRangeConfig(c.ScMinPostsIntervalMs),
 		NoSSEHeader:          c.NoSSEHeader,
 		XPaddingBytes:        splithttpNewRandRangeConfig(c.XPaddingBytes),
+		HttpMux:              &muxProtobuf,
 	}
 	return config, nil
 }

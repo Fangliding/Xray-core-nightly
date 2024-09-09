@@ -53,7 +53,6 @@ func (c *Config) GetRequestHeader() http.Header {
 
 	return header
 }
-
 func (c *Config) WriteResponseHeader(writer http.ResponseWriter) {
 	paddingLen := c.GetNormalizedXPaddingBytes().roll()
 	if paddingLen > 0 {
@@ -79,10 +78,8 @@ func (c *Config) GetNormalizedScMaxEachPostBytes() RandRangeConfig {
 			To:   1000000,
 		}
 	}
-
 	return *c.ScMaxEachPostBytes
 }
-
 func (c *Config) GetNormalizedScMinPostsIntervalMs() RandRangeConfig {
 	if c.ScMinPostsIntervalMs == nil || c.ScMinPostsIntervalMs.To == 0 {
 		return RandRangeConfig{
@@ -103,6 +100,49 @@ func (c *Config) GetNormalizedXPaddingBytes() RandRangeConfig {
 	}
 
 	return *c.XPaddingBytes
+}
+
+func (m *Multiplexing) GetNormalizedRequestsPerConnection() RandRangeConfig {
+	if m.RequestsPerConnection == nil {
+		return RandRangeConfig{
+			From: 0,
+			To:   0,
+		}
+	}
+
+	return *m.RequestsPerConnection
+}
+
+func (m *Multiplexing) GetNormalizedConnectionLifetimeMs() RandRangeConfig {
+	if m.ConnectionLifetimeMs == nil || m.ConnectionLifetimeMs.To == 0 {
+		return RandRangeConfig{
+			From: 0,
+			To:   0,
+		}
+	}
+	return *m.ConnectionLifetimeMs
+}
+
+func (m *Multiplexing) GetNormalizedConnections() RandRangeConfig {
+	if m.Connections == nil {
+		return RandRangeConfig{
+			From: 0,
+			To:   0,
+		}
+	}
+
+	return *m.Connections
+}
+
+func (m *Multiplexing) GetNormalizedConcurrency() RandRangeConfig {
+	if m.Concurrency == nil {
+		return RandRangeConfig{
+			From: 0,
+			To:   0,
+		}
+	}
+
+	return *m.Concurrency
 }
 
 func init() {
