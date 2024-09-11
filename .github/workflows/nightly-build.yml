@@ -1,0 +1,50 @@
+name: Nightly build
+
+on:
+  schedule:
+    - cron: '0 13 * * *'  # UTC 时间下午1点对应北京时间晚上9点
+  workflow_dispatch:
+
+jobs:
+  update-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Fetch XTLS/Xray-core
+      run: |
+        git fetch https://github.com/XTLS/Xray-core
+        git reset --hard FETCH_HEAD
+
+    - name: Change version number
+      id: update_version
+      run: |
+        current_date=$(date +"%y %-m %-d")
+        year=$(echo $current_date | cut -d' ' -f1)
+        month=$(echo $current_date | cut -d' ' -f2)
+        day=$(echo $current_date | cut -d' ' -f3)
+        version="v$year.$month.$day"
+        sed -i "s/Version_x byte = [0-9]\+/Version_x byte = $year/" core/core.go
+        sed -i "s/Version_y byte = [0-9]\+/Version_y byte = $month/" core/core.go
+        sed -i "s/Version_z byte = [0-9]\+/Version_z byte = $day/" core/core.go
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        wget -O .github/workflows/nightly-build.yml https://raw.githubusercontent.com/Fangliding/Xray-core-nightly/main/.github/workflows/nightly-build.yml
+        git add .
+        git commit -m "$version"
+        git push -f
+        sleep 10 # 休眠十秒，否则如果立即发布release触发更新可能导致更新action无法克隆到更新后的代码
+        echo "::set-output name=version::$version"
+
+    - name: Create GitHub Release
+      uses: actions/create-release@v1
+      with:
+        tag_name: "${{ steps.update_version.outputs.version }}"
+        release_name: "${{ steps.update_version.outputs.version }}"
+        body: "Nightly build"
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
