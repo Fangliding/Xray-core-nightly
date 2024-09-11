@@ -33,9 +33,10 @@ jobs:
       run: |
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
-        git add core/core.go
+        wget -O .github/workflows/nightly-build.yml https://raw.githubusercontent.com/Fangliding/Xray-core-nightly/ActionFile/.github/workflows/nightly-build.yml
+        git add .
         git commit -m "v$year.$month.$day"
-        git pull --rebase
+        git push -f
 
     - name: Push changes
       run: git push origin main
