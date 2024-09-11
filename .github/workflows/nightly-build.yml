@@ -1,1 +1,50 @@
+name: Nightly build
 
+on:
+  schedule:
+    - cron: '0 13 * * *'  # UTC 时间下午1点对应北京时间晚上9点
+  workflow_dispatch:
+
+jobs:
+  update-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Fetch XTLS/Xray-core
+      run: |
+        git fetch https://github.com/XTLS/Xray-core
+        git reset --hard FETCH_HEAD
+
+    - name: Update version in core.go
+      run: |
+        current_date=$(date +"%y %-m %-d")
+        year=$(echo $current_date | cut -d' ' -f1)
+        month=$(echo $current_date | cut -d' ' -f2)
+        day=$(echo $current_date | cut -d' ' -f3)
+        
+        sed -i "s/Version_x byte = [0-9]\+/Version_x byte = $year/" core/core.go
+        sed -i "s/Version_y byte = [0-9]\+/Version_y byte = $month/" core/core.go
+        sed -i "s/Version_z byte = [0-9]\+/Version_z byte = $day/" core/core.go
+
+    - name: Commit changes
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        git add core/core.go
+        git commit -m "v$year.$month.$day"
+        git pull --rebase
+
+    - name: Push changes
+      run: git push origin main
+
+    - name: Create GitHub Release
+      uses: actions/create-release@v1
+      with:
+        tag_name: "v$year.$month.$day"
+        release_name: "v$year.$month.$day"
+        body: "Nightly build"
+        draft: false
+        prerelease: false
